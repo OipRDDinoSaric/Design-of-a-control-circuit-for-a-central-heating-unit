@@ -1,0 +1,25 @@
+Nadji koliko koja funkcija utjece na broj izvodjenja u sekundi, zovi je manje puta. 
+
+
+--------------------------------------------
+Loopa u sekundi
+
+početno: 18/60
+samo nexloop: 942
+bez interneta: 26/60
+bez dohvati_temp_senzora: 20/60
+
+
+
+
+
+--------------------------------------------
+Vrijeme s neta
+svakih 50 sec i onda posaljes na nextion
+--------------------------------------------
+dobavljat temp sa senzora
+
+--------------------------------------------
+postavljat temp nextiona
+
+

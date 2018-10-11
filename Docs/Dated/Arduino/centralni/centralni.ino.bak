@@ -1,0 +1,395 @@
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#include <NTPtimeESP.h>
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+#include <Nextion.h>
+#include <SoftwareSerial.h>
+//#include <CayenneMQTTESP8266.h>
+//gdje se nalazi ESP?
+//const uint8_t SENZOR_ID = 0; Dnevni Boravak (centralni)
+// Senzor je spojen na D5 od esp-a
+#define ONE_WIRE_BUS 14
+#define MAX_TEMP 45
+#define MIN_TEMP -30
+//relej je spojen na D8 tj. 15
+#define RELEJ_PIN 15
+#define N_SENZORA 9
+
+float postavljena[N_SENZORA]; //temperatura koju smo postavili preko nextiona ili moba
+float trenutna[N_SENZORA]; //temperatura koju smo ocitali sa senzora
+boolean grijanje[N_SENZORA]; // flag koji je true ako hocemo grijanje u toj sobi
+uint8_t ZastavaVrijeme=0; // zastavica kojom gledamo da se ne zaustavimo negdje bespotrebno
+char vrijeme[10], danTjedna[10], dan[10], mjesec[10];
+/*
+char username[] = "2d362900-136c-11e8-b1c6-0d0b749c9848";
+char mqtt_password[] = "293dd2fedc21ac3f8b151caa5221c5f35bbaffc1";
+char client_id[] = "2fe9e8e0-1591-11e8-aeac-8375e928efd4";
+*/
+char auth[] = "54bc4eb2bfc4407796667ee142ec4bd0";
+BlynkTimer timer;
+
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+
+WiFiServer server(80);
+
+//primam tocno vrijeme s neta
+NTPtime NTPhr("time.google.com");
+
+char *ssid      = "RIGOLGRADNJA";               // Set you WiFi SSID
+char *password  = "ezpzlmnsqz123";               // Set you WiFi password
+char *espssid   = "CentralnoGrijanje";
+IPAddress ip(192,168,69,4);
+IPAddress gateway(192,168,69,1);
+IPAddress subnet(255,255,255,0);
+
+strDateTime dateTime;
+
+//D2 je RX, a D1 je TX
+//SoftwareSerial SoftSerial(4,5);
+extern SoftwareSerial nexSerial;
+
+char buffer[10] = {0};
+// Declare a text object [page id:0,component id:2, component name: "textNumber"].
+
+NexText t0 = NexText(0, 1, "t0");
+NexText t1 = NexText(0, 2, "t1");
+NexText t2 = NexText(0, 3, "t2");
+NexText t3 = NexText(0, 4, "t3");
+NexText t4 = NexText(0, 5, "t4");
+NexText t5 = NexText(0, 6, "t5");
+NexText t6 = NexText(0, 7, "t6");
+NexText t7 = NexText(0, 8, "t7");
+NexText t8 = NexText(0, 9, "t8");
+ // ide ovako danTjedna,dan,mjesec,vrijeme
+NexText nexdanTjedna = NexText(0, 9, "nexdanTjedna");
+NexText nexdan = NexText(0, 9, "nexdan");
+NexText nexmjesec = NexText(0, 9, "nexmjesec");
+NexText nexvrijeme = NexText(0, 9, "nexvrijeme");
+
+NexTouch *nex_listen_list[] =
+{
+  &t0,
+  &t1,
+  &t2,
+  &t3,
+  &t4,
+  &t5,
+  &t6,
+  &t7,
+  &t8,
+  NULL
+};
+
+void TrenutnoT();
+void dohvati_temp_senzora(void);
+void upisitrenutnutemp(void);
+void myTimerEvent();
+void upravljaj_relejem(void);
+void postavinextion(void);
+
+void setup(void)
+{
+  // start serial port
+  nexInit();
+  Serial.begin(9600);
+  Serial.println("2");
+  nexSerial.begin(115200);
+  //inicijalizacija pina koji upravlja relejem
+  pinMode(RELEJ_PIN, OUTPUT);
+  digitalWrite(RELEJ_PIN,LOW);
+  pinMode(D5, INPUT);
+  // Start up the library
+  sensors.begin();
+  for(int i=0; i<N_SENZORA;i++){
+    postavljena[i]=20;
+    trenutna[i]=99.0;
+    grijanje[i]=false;
+  }
+  Serial.println("3");
+  grijanje[0]=true;
+  WiFi.mode(WIFI_AP_STA);
+  Serial.println("3.");
+  WiFi.softAPConfig(ip,gateway,subnet);
+  Serial.println("3..");
+  WiFi.softAP(espssid, password);
+  Serial.println("3...");
+  //WiFi.begin(ssid, password);
+  Blynk.begin(auth, ssid, password);
+  Serial.println("3....");
+  timer.setInterval(12000L, myTimerEvent); //svakih 12 sekundi udi u funkciju myTimerEvent
+  //Cayenne.begin(username, mqtt_password, client_id, ssid, password);
+  server.begin();
+  Serial.println("4");
+}
+//-----------------------------------------------------------------------
+void loop(void)
+{
+//trazim trenutno vrijeme
+  delay(1000);
+  postavinextion();
+  sensors.requestTemperatures();
+  Serial.println("0");
+	trenutna[0]=sensors.getTempCByIndex(0);
+ 
+  Serial.println("1");
+//trazim temp od ostalih senzora
+  dohvati_temp_senzora();
+  
+  Serial.println("2");
+  upravljaj_relejem();
+  
+  Serial.println("3");
+  if(WiFi.status() == WL_CONNECTED){ 
+    //dohvacam trenutno vrijeme s neta
+    TrenutnoT();
+  Serial.println("4");
+   Blynk.run();
+   timer.run();
+    
+  Serial.println("5");
+  }
+  
+  postavinextion();
+}
+//-----------------------------------------------------------------------
+void TrenutnoT() {
+  dateTime = NTPhr.getNTPtime(1.0, 1);  // +1GMT with summer time.
+
+  if(dateTime.valid){
+    stavivrijemeuchar();
+    //Serial.println(trenutno_vrijeme);
+    ZastavaVrijeme=0;
+  } else if(ZastavaVrijeme<3){
+    ZastavaVrijeme++;
+    delay(100);  // adding this delay make the function work 100% reliable.
+    TrenutnoT();
+  } else {
+      ZastavaVrijeme=0;
+    }
+}
+
+void upravljaj_relejem(void){
+  boolean gasi=1, pali=0, promjena=0;
+  uint8_t i;
+  for(i=0;i<(N_SENZORA-1);i++){
+    if(grijanje[i]){
+     if(trenutna[i]<(postavljena[i]-2.0)){
+        pali=1;
+      }
+      else if(trenutna[i]<(postavljena[i]+1.0)){
+        gasi=0;    
+      }
+    }
+  }
+    if(pali){
+          digitalWrite(RELEJ_PIN,HIGH);
+    } else 
+        if(gasi){
+          digitalWrite(RELEJ_PIN,LOW);
+    }
+}
+
+void dohvati_temp_senzora(void){
+   uint8_t espID; 
+  WiFiClient client = server.available();
+  // wait for a client (web browser) to connect
+  if (client)
+  {
+    //Serial.println("Client connected");
+    while (client.connected())
+    {
+      // read line by line what the client (web browser) is requesting
+      if (client.available())
+      {
+        String req = client.readStringUntil('\r');
+        espID = req.toFloat();
+        req = client.readStringUntil('\r');
+        trenutna[espID]=req.toFloat();
+        client.flush();
+        delay(1); // give the web browser time to receive the data
+        client.stop(); // close the connection
+      }
+    }
+    //Serial.println("Client disonnected");
+  }
+}
+
+//UDP-8 => ISO 1 byte-2
+// č = 232 Č = 200
+// ć = 230 Ć = 198
+// ž = 190 Ž = 172
+// š = 185 Š = 169
+// đ = 240 Đ = 208
+
+void stavivrijemeuchar(void){ // ide ovako danTjedna,dan,mjesec,vrijeme
+  char temp[10]="\0";
+   switch(dateTime.dayofWeek){
+      case 1: strcpy(danTjedna,"Ned, \0"); break;
+      case 2: strcpy(danTjedna,"Pon, \0"); break;
+      case 3: strcpy(danTjedna,"Uto, \0"); break;
+      case 4: strcpy(danTjedna,"Sri, \0"); break;
+      case 5: strcpy(danTjedna,"Cet, \0"); danTjedna[0]=200; break;
+      case 6: strcpy(danTjedna,"Pet, \0"); break;
+      case 7: strcpy(danTjedna,"Sub, \0"); break;
+    }                                         //u char array danTjedna je npr. "Ned, " 
+    itoa((int)dateTime.day,dan,10);
+    strcat(dan,". \0"); //u char array dan je npr. "31. " 
+    switch(dateTime.month){
+      case 1:  strcpy(mjesec,"Sijecnja\0"); mjesec[4]=232;break;
+      case 2:  strcpy(mjesec,"Veljace\0"); mjesec[5]=232; break;
+      case 3:  strcpy(mjesec,"Ozujka\0"); mjesec[1]=190; break;
+      case 4:  strcpy(mjesec,"Travnja\0"); break;
+      case 5:  strcpy(mjesec,"Svibnja\0"); break;
+      case 6:  strcpy(mjesec,"Lipnja\0"); break;
+      case 7:  strcpy(mjesec,"Srpnja\0"); break;
+      case 8:  strcpy(mjesec,"Kolovoza\0"); break;
+      case 9:  strcpy(mjesec,"Rujna\0"); break;
+      case 10:  strcpy(mjesec,"Listapada\0"); break;
+      case 11:  strcpy(mjesec,"Studenog\0"); break;
+      case 12:  strcpy(mjesec,"Prosinca\0"); break; //u char array mjesec je npr. "Veljača" 
+    }
+
+  itoa((int)dateTime.hour, vrijeme, 10);
+  if(dateTime.hour<10){
+    vrijeme[1]=vrijeme[0];
+    vrijeme[0]='0';
+    vrijeme[2]='\0';
+    }
+  strcat(vrijeme, ":\0");
+ 
+  itoa((int)dateTime.minute, temp, 10);
+  if(dateTime.minute<10){
+    temp[1]=temp[0];
+    temp[0]='0';
+    temp[2]='\0';
+    }
+  strcat(vrijeme, temp); //u char array vrijeme je npr. "10:54"
+}
+
+void myTimerEvent()
+{
+  Blynk.virtualWrite(V0, grijanje[0]);
+  Blynk.virtualWrite(V1, grijanje[1]);
+  Blynk.virtualWrite(V2, grijanje[2]);
+  Blynk.virtualWrite(V3, grijanje[3]);
+  Blynk.virtualWrite(V4, grijanje[4]);
+  Blynk.virtualWrite(V5, grijanje[5]);
+  Blynk.virtualWrite(V6, grijanje[6]);
+  Blynk.virtualWrite(V7, grijanje[7]);
+  Blynk.virtualWrite(V10, postavljena[0]);
+  Blynk.virtualWrite(V15, postavljena[5]);
+}
+
+
+// This function is called when there is a Widget
+// which is requesting data from Virtual Pin (5)
+BLYNK_READ(V0){   Blynk.virtualWrite(V0, grijanje[0]);}
+BLYNK_READ(V1){   Blynk.virtualWrite(V1, grijanje[1]);}
+BLYNK_READ(V2){   Blynk.virtualWrite(V2, grijanje[2]);}
+BLYNK_READ(V3){   Blynk.virtualWrite(V3, grijanje[3]);}
+BLYNK_READ(V4){   Blynk.virtualWrite(V4, grijanje[4]);}
+BLYNK_READ(V5){   Blynk.virtualWrite(V5, grijanje[5]);}
+BLYNK_READ(V6){   Blynk.virtualWrite(V6, grijanje[6]);}
+BLYNK_READ(V7){   Blynk.virtualWrite(V7, grijanje[7]);}
+BLYNK_READ(V10){   Blynk.virtualWrite(V10, postavljena[0]);}
+BLYNK_READ(V15){   Blynk.virtualWrite(V15, postavljena[5]);}
+
+// This function will be called every time Slider Widget
+// in Blynk app writes values to the Virtual Pin
+BLYNK_WRITE(V0){ grijanje[0] = param.asInt();}
+BLYNK_WRITE(V1){ grijanje[1] = param.asInt();}
+BLYNK_WRITE(V2){ grijanje[2] = param.asInt();}
+BLYNK_WRITE(V3){ grijanje[3] = param.asInt();}
+BLYNK_WRITE(V4){ grijanje[4] = param.asInt();}
+BLYNK_WRITE(V5){ grijanje[5] = param.asInt();}
+BLYNK_WRITE(V6){ grijanje[6] = param.asInt();}
+BLYNK_WRITE(V7){ grijanje[7] = param.asInt();}
+BLYNK_WRITE(V10){ postavljena[0] = param.asDouble();}
+BLYNK_WRITE(V15){ postavljena[5] = param.asDouble();}
+
+void postavinextion(void){
+  memset(buffer, 0, sizeof(buffer)); // clear buffer
+  dtostrf(trenutna[0], 4, 1, buffer);
+  t0.setText(buffer);
+  
+  memset(buffer, 0, sizeof(buffer)); // clear buffer
+  dtostrf(trenutna[1], 4, 1, buffer);
+  t1.setText(buffer);
+  
+  memset(buffer, 0, sizeof(buffer)); // clear buffer
+  dtostrf(trenutna[2], 4, 1, buffer);
+  t2.setText(buffer);
+  
+  memset(buffer, 0, sizeof(buffer)); // clear buffer
+  dtostrf(trenutna[3], 4, 1, buffer);
+  t3.setText(buffer);
+  
+  memset(buffer, 0, sizeof(buffer)); // clear buffer
+  dtostrf(trenutna[4], 4, 1, buffer);
+  t4.setText(buffer);
+  
+  memset(buffer, 0, sizeof(buffer)); // clear buffer
+  dtostrf(trenutna[5], 4, 1, buffer);
+  t5.setText(buffer);
+  
+  memset(buffer, 0, sizeof(buffer)); // clear buffer
+  dtostrf(trenutna[6], 4, 1, buffer);
+  t6.setText(buffer);
+  
+  memset(buffer, 0, sizeof(buffer)); // clear buffer
+  dtostrf(trenutna[7], 4, 1, buffer);
+  //strcpy(buffer, NexTemp.c_str());
+  t7.setText(buffer);
+  
+  memset(buffer, 0, sizeof(buffer)); // clear buffer
+  dtostrf(trenutna[8], 4, 1, buffer);
+  t8.setText(buffer);
+  
+  // ide ovako danTjedna,dan,mjesec,vrijeme
+  memset(buffer, 0, sizeof(buffer)); // clear buffer
+  strcpy(buffer,danTjedna);
+  nexdanTjedna.setText(buffer);
+
+  memset(buffer, 0, sizeof(buffer)); // clear buffer
+  strcpy(buffer,dan);
+  nexdan.setText(buffer);
+
+  memset(buffer, 0, sizeof(buffer)); // clear buffer
+  strcpy(buffer,mjesec);
+  nexmjesec.setText(buffer);
+
+  memset(buffer, 0, sizeof(buffer)); // clear buffer
+  strcpy(buffer,vrijeme);
+  nexvrijeme.setText(buffer);
+}
+
+/*CAYENNE_IN(20){ postavljena[0]=getValue.asDouble();}
+CAYENNE_IN(21){ postavljena[1]=getValue.asDouble();}
+CAYENNE_IN(22){ postavljena[2]=getValue.asDouble();}
+CAYENNE_IN(23){ postavljena[3]=getValue.asDouble();}
+CAYENNE_IN(24){ postavljena[4]=getValue.asDouble();}
+CAYENNE_IN(25){ postavljena[5]=getValue.asDouble();}
+CAYENNE_IN(26){ postavljena[6]=getValue.asDouble();}
+CAYENNE_IN(27){ postavljena[7]=getValue.asDouble();}
+
+CAYENNE_IN(0){ grijanje[0]=getValue.asInt();}
+CAYENNE_IN(1){ grijanje[1]=getValue.asInt();}
+CAYENNE_IN(2){ grijanje[2]=getValue.asInt();}
+CAYENNE_IN(3){ grijanje[3]=getValue.asInt();}
+CAYENNE_IN(4){ grijanje[4]=getValue.asInt();}
+CAYENNE_IN(5){ grijanje[5]=getValue.asInt();}
+CAYENNE_IN(6){ grijanje[6]=getValue.asInt();}
+CAYENNE_IN(7){ grijanje[7]=getValue.asInt();}
+
+
+CAYENNE_OUT_DEFAULT(){
+  uint8_t i;
+    for(i=0;i<N_SENZORA-1;i++){
+    Cayenne.virtualWrite(i, grijanje[i], "digital_sensor","d");
+    }
+    Cayenne.celsiusWrite(100, trenutna[0]);
+    Cayenne.celsiusWrite(102, trenutna[2]);
+}
+*/

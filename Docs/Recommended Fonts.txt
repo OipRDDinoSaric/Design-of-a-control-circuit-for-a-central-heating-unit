@@ -1,0 +1,30 @@
+I strongly suggest using exclusively monospaced fonts, which letters and characters each occupy the same amount of horizontal space.
+
+If you don't use a monospaced font you can get problems displaying text and numbers. For example, I've notes that on the nextion display the letter "W" upper case would show as lowercase.
+
+For that reason I listed my recommended fonts that I tested to work well for the Nextion display:
+
+BatangChe
+Consolas
+CourierNew
+DFKai-SB
+DotumChe
+FangSong
+GulimChe
+GungsuhChe
+Incubus
+KaiTi
+LucidaSansTypewriter
+MingLiU
+MiriamFixed
+MSGothic
+MSMincho
+NSimSun
+OCRAExtended
+Quartz
+Rod
+SDViewerFont
+SimHei
+SimplifiedArabicFixed
+SimSun
+SimSun-ExtB

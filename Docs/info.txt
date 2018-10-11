@@ -1,0 +1,17 @@
+#######################
+###  ESP8266 system ###
+### Central heating ###
+###  by Dino Saric  ###
+#######################
+
+Rooms to control:
+
+0 - Living room - DONE
+1 - Main bedroom - DONE+
+2 - Helena's room - DONE+
+3 - Dino's room - DONE+
+4 - Bathroom small - DONE+
+5 - Bathroom big - DONE+
+6 - Veranda - DONE+
+7 - Hall - DONE+
+8 - Outside - DONE+

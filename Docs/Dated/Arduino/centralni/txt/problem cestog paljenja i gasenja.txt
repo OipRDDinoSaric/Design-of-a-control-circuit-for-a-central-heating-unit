@@ -1,0 +1,11 @@
+pretpostavka: samo 2 espa, postavljena=20
+Kako cemo napraviti da se centralno ne pali puno puta. 
+
+1 nacin: napravit funkciju koja se provjerava svako 5 minuta. problem je ako stisnemo novo gledanje
+temp upaliti ce se tek nakon 5 min te zbog male promjene temp u pet minuta opet ulazimo u isti problem
+
+2 nacin: gasimo centralno kad niti jedan nije ispod 20+1=21 stupnja. Palimo centralno kad je jedan  ispod 20-2
+
+for i do n
+if(tren i <20+2) gasi=0 ako nije ovo moramo gasit!
+if(tren i <20-2) pali=1 ako je ovo znaci moramo palit!

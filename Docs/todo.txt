@@ -1,0 +1,17 @@
+ostvarit komunikaciju glavnog espa i sensorskih espova
+
+napravit kućište za sve espeove
+riješit napajanje
+------------------------------------------------------
+NEOBAVEZNO:
+napravit komunikaciju s blynkom
+prikazat vrijeme na ekranu
+------------------------------------------------------
+Potrebni podatci:
+
+trenutna od espa - 3 stranica
+postavljena od nextiona - 3 stranica, izmedju 15 i 26
+tipka grij od nextiona - 0 je ON, 1 je OFF
+------------------------------------------------------
+PAZNJA
+text box može primiti najvise 4 znaka, tj. ako imam temp manju od -10 onda moram slati samo -10 bez decimale

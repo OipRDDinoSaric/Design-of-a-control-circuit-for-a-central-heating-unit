@@ -1,0 +1,6 @@
+svi brojevi su u sekundama
+ako nije spojen na interent
+pokusaji spojit se s WIFI_AP_STA
+
+
+ako nakon 
